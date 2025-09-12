@@ -27,6 +27,9 @@ export function roomRefs(roomId: string): RoomRefs {
       usernameFragment: candidate.usernameFragment ?? "",
     };
   }
+  export const STUN_SERVERS: RTCConfiguration = {
+    iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
+  };
 
 
 export function createRoom(pc: RTCPeerConnection) {
