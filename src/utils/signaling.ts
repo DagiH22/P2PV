@@ -32,7 +32,7 @@ export function roomRefs(roomId: string): RoomRefs {
   };
 
 
-export function createRoom(pc: RTCPeerConnection) {
+export async function createRoom(pc: RTCPeerConnection) {
     const roomRef = doc(collection(db, "rooms"));
     const roomId = roomRef.id;
     
@@ -44,8 +44,8 @@ export function createRoom(pc: RTCPeerConnection) {
         await addDoc(offerCandidates, cleanCandidate(e.candidate.toJSON()));
       }
     };
-     pc.createOffer().then(async (offer) => {
-      pc.setLocalDescription(offer);
+    const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
+    await pc.setLocalDescription(offer);
       const roomWithOffer = {
         'offer': {
           type: offer.type,
@@ -53,8 +53,8 @@ export function createRoom(pc: RTCPeerConnection) {
         },
         createdAt: serverTimestamp()
       };
-      await setDoc(roomRef, roomWithOffer);
-    });
+    await setDoc(roomRef, roomWithOffer);
+    
 
     const pendingCandidates: RTCIceCandidateInit[] = [];
     let remoteDescSet = false;
@@ -64,7 +64,6 @@ export function createRoom(pc: RTCPeerConnection) {
       const data = snapshot.data();
       if (!data) return;
       if (!pc.currentRemoteDescription && data?.answer){
-
           try{
               await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
                 remoteDescSet = true;
@@ -98,7 +97,11 @@ export function createRoom(pc: RTCPeerConnection) {
     const {roomRef, answerCandidates, offerCandidates} = roomRefs(roomId)
     pc.onicecandidate = (e) => {
       if (e.candidate) {
+      try{
         addDoc(answerCandidates, cleanCandidate(e.candidate.toJSON()));
+      } catch (err) {
+        console.error("Failed to add mobile ICE candidate:", err, e.candidate);
+      }
       }
     };
 
@@ -113,7 +116,7 @@ export function createRoom(pc: RTCPeerConnection) {
       alert("Offer not found")
       return
     }
-    pc.setRemoteDescription(new RTCSessionDescription(offer))
+    await pc.setRemoteDescription(new RTCSessionDescription(offer))
 
     const answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
