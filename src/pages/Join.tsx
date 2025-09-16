@@ -1,99 +1,180 @@
 import { useEffect, useRef, useState } from "react";
 import { joinRoom, STUN_SERVERS } from "../utils/signaling";
 import { useParams } from "react-router-dom";
+import {
+  getListOfCameras,
+  getListOfMicrophones,
+  getMediaStream,
+} from "../utils/cameras";
 
 function Join() {
   const pcRef = useRef<RTCPeerConnection | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const localRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
-  const { roomId } = useParams<{ roomId: string }>();
   const localStreamRef = useRef<MediaStream | null>(null);
 
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCamera, setSelectedCamera] = useState<string>("");
+
+  const { roomId } = useParams<{ roomId: string }>();
+
+  // Load available cameras on mount
+  useEffect(() => {
+    async function loadDevices() {
+      const camList = await getListOfCameras();
+      setCameras(camList);
+      if (camList.length > 0 && !selectedCamera) {
+        setSelectedCamera(camList[0].deviceId);
+      }
+    }
+
+    loadDevices();
+
+    navigator.mediaDevices.addEventListener("devicechange", loadDevices);
+
+    return () => {
+      navigator.mediaDevices.removeEventListener("devicechange", loadDevices);
+    };
+  }, []);
+
+  // Get stream & connect to peer when roomId is available
   useEffect(() => {
     if (!roomId) {
       console.warn("No room ID provided");
       return;
     }
-    let pc: RTCPeerConnection | null = null;
 
-    // if (!pcRef.current) {
-    //     pcRef.current = new RTCPeerConnection(STUN_SERVERS);
-    //     console.log("Created PeerConnection");
-    //   }
-    //   const pc = pcRef.current;
+    let pc: RTCPeerConnection | null = null;
 
     (async () => {
       try {
-        // 1️⃣ Get local stream first
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
-        });
+        const stream = await getMediaStream(selectedCamera);
         setLocalStream(stream);
         localStreamRef.current = stream;
 
         pc = new RTCPeerConnection(STUN_SERVERS);
         pcRef.current = pc;
 
-        // Add local tracks before answering
-        stream.getTracks().forEach((track) =>{
-            if (pc && pc.signalingState !== "closed") {
-            pc.addTrack(track, stream)}});
+        // Add local tracks to connection
+        stream.getTracks().forEach((track) => pc?.addTrack(track, stream));
 
-        if (pc && pc.signalingState !== "closed") {
         pc.ontrack = (event) => {
-            console.log("📡 Remote track received");
-            if (event.streams && event.streams[0]) {
-            setRemoteStream(event.streams[0]);
-            // console.log("Remote stream set:", event.streams[0]);
+          console.log("📡 Remote track received");
+        
+          // If we already have a remote stream, reuse it
+          setRemoteStream((prevStream) => {
+            let stream = prevStream ?? new MediaStream();
+        
+            // Add the new track if it's not already in the stream
+            if (!stream.getTracks().includes(event.track)) {
+              stream.addTrack(event.track);
             }
-        }}
-        // 2️⃣ Now join the room
+        
+            // Attach once when stream is first created
+            if (!prevStream && remoteRef.current) {
+              remoteRef.current.srcObject = stream;
+              remoteRef.current
+                .play()
+                .catch((err) => console.warn("Autoplay blocked:", err));
+            }
+        
+            return stream;
+          });
+        };
+        
+        
+
         await joinRoom(roomId, pc);
       } catch (err) {
         console.error("Failed to join room:", err);
       }
     })();
-   
 
     return () => {
-    if (pc && pc.signalingState !== "closed") {
+      if (pc && pc.signalingState !== "closed") {
         console.log("Closing peer connection...");
-        pc.close()
-    }
+        pc.close();
+      }
       pcRef.current = null;
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, [roomId]);
 
+  // Update local video preview when stream changes
   useEffect(() => {
     if (localRef.current && localStream) {
       localRef.current.srcObject = localStream;
-      console.log("Local stream set:", localStream);
     }
   }, [localStream]);
 
+  // Update remote video when stream changes
   useEffect(() => {
     if (remoteRef.current && remoteStream) {
       remoteRef.current.srcObject = remoteStream;
-      remoteRef.current
-        .play()
-        .catch((err) => console.warn("Autoplay blocked:", err));
     }
   }, [remoteStream]);
+
+  // Handle camera selection change
+  async function handleCameraChange(deviceId: string) {
+    setSelectedCamera(deviceId);
+
+    // Get new stream with selected camera
+    const newStream = await getMediaStream(deviceId);
+    setLocalStream(newStream);
+    localStreamRef.current = newStream;
+
+    // Replace track in RTCPeerConnection
+    const videoTrack = newStream.getVideoTracks()[0];
+    const sender = pcRef.current
+      ?.getSenders()
+      .find((s) => s.track?.kind === "video");
+
+    if (sender && videoTrack) {
+      sender.replaceTrack(videoTrack);
+    }
+  }
 
   return (
     <div>
       <h1>P2PV</h1>
       <h2>Guest View</h2>
 
+      <label htmlFor="device" className="block mb-2 font-medium">
+        Choose a Camera:
+      </label>
+      <select
+        id="device"
+        value={selectedCamera}
+        onChange={(e) => handleCameraChange(e.target.value)}
+        className="border rounded-lg p-2"
+      >
+        {cameras.map((device) => (
+          <option key={device.deviceId} value={device.deviceId}>
+            {device.label || `Camera ${device.deviceId}`}
+          </option>
+        ))}
+      </select>
+
       <h3>Local Stream</h3>
-      <video ref={localRef} autoPlay muted playsInline width={500} height={500} />
+      <video
+        ref={localRef}
+        autoPlay
+        muted
+        playsInline
+        width={500}
+        height={300}
+      />
 
       <h3>Remote Stream</h3>
-      <video ref={remoteRef} autoPlay playsInline width={500} height={500} />
+      <video
+        ref={remoteRef}
+        autoPlay
+        playsInline
+        width={500}
+        height={300}
+      />
     </div>
   );
 }
