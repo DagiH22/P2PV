@@ -16,7 +16,9 @@ function Join() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string>("");
+  const [selectedMicrophone, setSelectedMicrophone] = useState<string>("");
 
   const { roomId } = useParams<{ roomId: string }>();
 
@@ -24,9 +26,14 @@ function Join() {
   useEffect(() => {
     async function loadDevices() {
       const camList = await getListOfCameras();
+      const micList = await getListOfMicrophones();
       setCameras(camList);
+      setMicrophones(micList);
       if (camList.length > 0 && !selectedCamera) {
         setSelectedCamera(camList[0].deviceId);
+      }
+      if (micList.length > 0 && !selectedMicrophone) {
+        setSelectedMicrophone(micList[0].deviceId);
       }
     }
 
@@ -121,7 +128,8 @@ function Join() {
     setSelectedCamera(deviceId);
 
     // Get new stream with selected camera
-    const newStream = await getMediaStream(deviceId);
+    const audioDeviceId = selectedMicrophone ? selectedCamera : undefined;
+    const newStream = await getMediaStream(deviceId, audioDeviceId);
     setLocalStream(newStream);
     localStreamRef.current = newStream;
 
@@ -133,6 +141,25 @@ function Join() {
 
     if (sender && videoTrack) {
       sender.replaceTrack(videoTrack);
+    }
+  }
+  async function handleMicrophoneChange(deviceId: string) {
+    setSelectedMicrophone(deviceId);
+    const videoDeviceId = selectedCamera ? selectedCamera : undefined;
+
+    // Get new stream with selected microphone
+    const newStream = await getMediaStream(videoDeviceId, deviceId);
+    setLocalStream(newStream);
+    localStreamRef.current = newStream;
+
+    // Replace track in RTCPeerConnection
+    const audioTrack = newStream.getAudioTracks()[0];
+    const sender = pcRef.current
+      ?.getSenders()
+      .find((s) => s.track?.kind === "audio");
+
+    if (sender && audioTrack) {
+      sender.replaceTrack(audioTrack);
     }
   }
 
@@ -153,6 +180,22 @@ function Join() {
         {cameras.map((device) => (
           <option key={device.deviceId} value={device.deviceId}>
             {device.label || `Camera ${device.deviceId}`}
+          </option>
+        ))}
+      </select>
+      <br />
+      <label htmlFor="audioDevice" className="block mb-2 font-medium">
+        Choose a Microphone:
+      </label>
+      <select
+        id="audioDevice"
+        value={selectedMicrophone}
+        onChange={(e) => handleMicrophoneChange(e.target.value)}
+        className="border rounded-lg p-2"
+      >
+        {microphones.map((device) => (
+          <option key={device.deviceId} value={device.deviceId}>
+            {device.label || `Microphone ${device.deviceId}`}
           </option>
         ))}
       </select>
