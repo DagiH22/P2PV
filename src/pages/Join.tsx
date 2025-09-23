@@ -6,8 +6,15 @@ import {
   getListOfMicrophones,
   getMediaStream,
 } from "../utils/cameras";
+import MessageBox from "../components/MessageBox";
+type ChatMessage = {
+  id: string;
+  text: string;
+  sender: "host" | "guest";
+  time: string;
+};
 
-function Join() {
+function Join({chatMessages,setChatMessages}:{chatMessages:ChatMessage[],setChatMessages:React.Dispatch<React.SetStateAction<ChatMessage[]>>} ) {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
@@ -19,8 +26,10 @@ function Join() {
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string>("");
   const [selectedMicrophone, setSelectedMicrophone] = useState<string>("");
+  const [channel,setChannel] = useState<RTCDataChannel>()
 
   const { roomId } = useParams<{ roomId: string }>();
+  // const [messages, setMessages] = useState<string[]>([]);
 
   // Load available cameras on mount
   useEffect(() => {
@@ -63,6 +72,15 @@ function Join() {
 
         pc = new RTCPeerConnection(STUN_SERVERS);
         pcRef.current = pc;
+        pc.ondatachannel=(e)=>{
+          const chan = e.channel
+          setChannel(chan)
+          // chan.onmessage = (e)=>{
+          //   const receivedMessage: ChatMessage = JSON.parse(e.data);
+          //   setChatMessages(prevMessages=>[... prevMessages,receivedMessage])
+          // }
+
+        }
 
         // Add local tracks to connection
         stream.getTracks().forEach((track) => pc?.addTrack(track, stream));
@@ -144,6 +162,12 @@ function Join() {
       sender.replaceTrack(videoTrack);
     }
   }
+  useEffect(() => {
+    if (!channel) return;
+    channel.onmessage = (e) => {const receivedMessage: ChatMessage = JSON.parse(e.data);
+      setChatMessages(prevMessages=>[... prevMessages,receivedMessage])
+    };
+  }, [channel]);
   
   async function handleMicrophoneChange(deviceId: string) {
     setSelectedMicrophone(deviceId);
@@ -173,31 +197,31 @@ function Join() {
 
   }
   function toggleVideo() {
-      if (!localStream) return;
+    if (!localStream) return;
     
-      const videoTrack = localStream.getVideoTracks()[0];
+    const videoTrack = localStream.getVideoTracks()[0];
     
-      if (videoTrack) {
-        // Find the sender for the video track
-        const sender = pcRef.current
-          ?.getSenders()
-          .find((s) => s.track === videoTrack);
+      if (videoTrack) {
+         // Find the sender for the video track
+         const sender = pcRef.current
+          ?.getSenders()
+          .find((s) => s.track === videoTrack);
     
-        if (sender) {
-          if (videoTrack.enabled) {
-            // If video is currently enabled, disable it by replacing the track with null
-            sender.replaceTrack(null);
-            videoTrack.enabled = false;
-          } else {
-            // If video is currently disabled, get a new video stream and replace the track
-            getMediaStream(selectedCamera, selectedMicrophone).then((newStream) => {
-              const newVideoTrack = newStream.getVideoTracks()[0];
-              sender.replaceTrack(newVideoTrack);
-              setLocalStream(newStream);
-            });
-          }
-        }
-      }
+          if (sender) {
+          if (videoTrack.enabled) {
+            // If video is currently enabled, disable it by replacing the track with null
+            sender.replaceTrack(null);
+            videoTrack.enabled = false;
+            } else {
+              // If video is currently disabled, get a new video stream and replace the track
+              getMediaStream(selectedCamera, selectedMicrophone).then((newStream) => {
+              const newVideoTrack = newStream.getVideoTracks()[0];
+              sender.replaceTrack(newVideoTrack);
+              setLocalStream(newStream);
+             });
+           }
+         }
+       }
     }
   
   
@@ -258,6 +282,7 @@ function Join() {
       />
       <button onClick={toggleAudio}> toggle audio</button>
       <button onClick={toggleVideo}> toggle video</button>
+      <MessageBox channel={channel} chats={chatMessages} source={'guest'} setChatMessages={setChatMessages}></MessageBox>
     </div>
   );
 }

@@ -5,8 +5,19 @@ import {
   getListOfMicrophones,
   getMediaStream,
 } from "../utils/cameras";
+import { QRCodeCanvas } from 'qrcode.react';
+import CreateChatChannel from '../utils/channel';
+import MessageBox from '../components/MessageBox';
 
-function Host() {
+type ChatMessage = {
+  id: string;
+  text: string;
+  sender: 'host'|'guest'
+  time: string;
+};
+
+
+function Host({chatMessages,setChatMessages}:{chatMessages:ChatMessage[],setChatMessages:React.Dispatch<React.SetStateAction<ChatMessage[]>>})  {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const localRef = useRef<HTMLVideoElement | null>(null);
@@ -14,11 +25,14 @@ function Host() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const [roomId, setRoomId] = useState<string>('');
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const [channel,setChannel] = useState<RTCDataChannel>()
 
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string>("");
   const [selectedMicrophone, setSelectedMicrophone] = useState<string>("");
+  
+  // const [messages, setMessages] = useState<string[]>([]);
 
   useEffect(() => {
     async function loadDevices() {
@@ -46,6 +60,30 @@ function Host() {
   useEffect(() => {
     const pc = new RTCPeerConnection(STUN_SERVERS);
     pcRef.current = pc;
+    const chan = CreateChatChannel(pc)
+    // setChannel(chan)
+    // if(channel){
+    //   channel.onmessage = (e)=>{
+    //     console.log('host channel message',e.data)
+    //     const receivedMessage: ChatMessage = JSON.parse(e.data);
+    //     setChatMessages(prevMessages=>[... prevMessages,receivedMessage])
+    //   }
+    // }
+    // else{
+    //   console.warn("channel not created :host")
+    // }
+    
+    // setChannel(chan)
+    chan.onmessage = (e) => {
+      try {
+        const receivedMessage: ChatMessage = JSON.parse(e.data)
+        setChatMessages(prev => [...prev, receivedMessage])
+      } catch(err) {
+        console.error(err)
+      }
+    }
+    setChannel(chan)
+
 
     // debug hooks — helpful when things look wrong
     pc.oniceconnectionstatechange = () => {
@@ -97,6 +135,13 @@ function Host() {
       localStream?.getTracks().forEach((t) => t.stop());
     };
   }, []);
+  useEffect(() => {
+    if (!channel) return;
+    channel.onmessage = (e) => {const receivedMessage: ChatMessage = JSON.parse(e.data);
+      setChatMessages(prevMessages=>[... prevMessages,receivedMessage])
+    };
+  }, [channel]);
+  
 
   // set local video
   useEffect(() => {
@@ -173,6 +218,7 @@ function Host() {
   const joinUrl = roomId ? `${location.origin}/join/${roomId}` : '';
 
   return (
+    
     <div>
       <h1>P2PV</h1>
       <h2>host view</h2>
@@ -208,19 +254,21 @@ function Host() {
         ))}
       </select>
 
-
-
-
-
       <h2>Local Stream</h2>
       <video ref={localRef} autoPlay muted playsInline width={500} height={500} />
       <h2>Remote Stream</h2>
       <video ref={remoteRef} autoPlay muted playsInline width={500} height={500} />
-      <p> <a href={joinUrl} target='_blank'>{joinUrl}</a></p>
+      <div>
+          <QRCodeCanvas value={joinUrl} size={220}/>
+      </div>
+       <a href={joinUrl} target='_blank'>{joinUrl}</a> <button onClick={()=>navigator.clipboard.writeText(joinUrl)}>Copy</button>
       <br />
       <button onClick={toggleAudio}> toggle audio</button>
       <button onClick={toggleVideo}> toggle video</button>
-    </div>
+      <br /><br /><br /><br /><br />
+    <MessageBox channel={channel} chats={chatMessages} source={'host'} setChatMessages={setChatMessages}/>
+  </div>
+    
   );
 }
 
