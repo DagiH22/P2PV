@@ -60,6 +60,7 @@ function Host() {
       console.log('📡 Host: remote track received', event);
       if (event.streams && event.streams[0]) {
         setRemoteStream(event.streams[0]);
+        console.log('Using event.streams[0]');
       } else {
         // fallback: create a stream and add this track (covers some browsers)
         const ms = new MediaStream();
@@ -70,7 +71,7 @@ function Host() {
 
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const stream = await getMediaStream(selectedCamera);
         setLocalStream(stream);
         // Add local tracks
         stream.getTracks().forEach((track) => {
@@ -153,7 +154,22 @@ function Host() {
       sender.replaceTrack(audioTrack);
     }
   }
+  function toggleAudio() {
+    if (!localStream) return
+    const audioTrack = localStream.getAudioTracks()[0]
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled
+      console.log('audioTrack.enabled', audioTrack.enabled);
+    }
 
+  }
+  function toggleVideo() { 
+    if (!localStream) return
+    const videoTrack = localStream.getVideoTracks()[0]
+    if (videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled
+    }
+  }
   const joinUrl = roomId ? `${location.origin}/join/${roomId}` : '';
 
   return (
@@ -200,7 +216,10 @@ function Host() {
       <video ref={localRef} autoPlay muted playsInline width={500} height={500} />
       <h2>Remote Stream</h2>
       <video ref={remoteRef} autoPlay muted playsInline width={500} height={500} />
-      <p>{joinUrl}</p>
+      <p> <a href={joinUrl} target='_blank'>{joinUrl}</a></p>
+      <br />
+      <button onClick={toggleAudio}> toggle audio</button>
+      <button onClick={toggleVideo}> toggle video</button>
     </div>
   );
 }

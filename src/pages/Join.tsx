@@ -108,11 +108,12 @@ function Join() {
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, [roomId]);
-
+  
   // Update local video preview when stream changes
   useEffect(() => {
     if (localRef.current && localStream) {
       localRef.current.srcObject = localStream;
+      localRef.current.muted = true;
     }
   }, [localStream]);
 
@@ -126,23 +127,24 @@ function Join() {
   // Handle camera selection change
   async function handleCameraChange(deviceId: string) {
     setSelectedCamera(deviceId);
-
+    
     // Get new stream with selected camera
     const audioDeviceId = selectedMicrophone ? selectedCamera : undefined;
     const newStream = await getMediaStream(deviceId, audioDeviceId);
     setLocalStream(newStream);
     localStreamRef.current = newStream;
-
+    
     // Replace track in RTCPeerConnection
     const videoTrack = newStream.getVideoTracks()[0];
     const sender = pcRef.current
-      ?.getSenders()
-      .find((s) => s.track?.kind === "video");
-
+    ?.getSenders()
+    .find((s) => s.track?.kind === "video");
+    
     if (sender && videoTrack) {
       sender.replaceTrack(videoTrack);
     }
   }
+  
   async function handleMicrophoneChange(deviceId: string) {
     setSelectedMicrophone(deviceId);
     const videoDeviceId = selectedCamera ? selectedCamera : undefined;
@@ -151,18 +153,54 @@ function Join() {
     const newStream = await getMediaStream(videoDeviceId, deviceId);
     setLocalStream(newStream);
     localStreamRef.current = newStream;
-
+    
     // Replace track in RTCPeerConnection
     const audioTrack = newStream.getAudioTracks()[0];
     const sender = pcRef.current
-      ?.getSenders()
-      .find((s) => s.track?.kind === "audio");
-
+    ?.getSenders()
+    .find((s) => s.track?.kind === "audio");
+    
     if (sender && audioTrack) {
       sender.replaceTrack(audioTrack);
     }
   }
+  function toggleAudio() {
+    if (!localStream) return
+    const audioTrack = localStream.getAudioTracks()[0]
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled
+    }
 
+  }
+  function toggleVideo() {
+      if (!localStream) return;
+    
+      const videoTrack = localStream.getVideoTracks()[0];
+    
+      if (videoTrack) {
+        // Find the sender for the video track
+        const sender = pcRef.current
+          ?.getSenders()
+          .find((s) => s.track === videoTrack);
+    
+        if (sender) {
+          if (videoTrack.enabled) {
+            // If video is currently enabled, disable it by replacing the track with null
+            sender.replaceTrack(null);
+            videoTrack.enabled = false;
+          } else {
+            // If video is currently disabled, get a new video stream and replace the track
+            getMediaStream(selectedCamera, selectedMicrophone).then((newStream) => {
+              const newVideoTrack = newStream.getVideoTracks()[0];
+              sender.replaceTrack(newVideoTrack);
+              setLocalStream(newStream);
+            });
+          }
+        }
+      }
+    }
+  
+  
   return (
     <div>
       <h1>P2PV</h1>
@@ -218,6 +256,8 @@ function Join() {
         width={500}
         height={300}
       />
+      <button onClick={toggleAudio}> toggle audio</button>
+      <button onClick={toggleVideo}> toggle video</button>
     </div>
   );
 }
