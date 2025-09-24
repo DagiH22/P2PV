@@ -31,6 +31,7 @@ function Host({chatMessages,setChatMessages}:{chatMessages:ChatMessage[],setChat
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string>("");
   const [selectedMicrophone, setSelectedMicrophone] = useState<string>("");
+  const [shareScreen,setShareScreen] = useState<boolean>(false)
   
   // const [messages, setMessages] = useState<string[]>([]);
 
@@ -215,6 +216,46 @@ function Host({chatMessages,setChatMessages}:{chatMessages:ChatMessage[],setChat
       videoTrack.enabled = !videoTrack.enabled
     }
   }
+  async function  screenShare() {
+    if (!pcRef.current) return;
+  
+    if (!shareScreen) {
+      navigator.mediaDevices.getDisplayMedia({ video: {displaySurface:'window'}, audio: true }).then((stream) => {
+        const screenTrack = stream.getVideoTracks()[0];
+        const sender = pcRef.current
+          ?.getSenders()
+          .find((s) => s.track?.kind === "video");
+  
+        setLocalStream(stream);
+        setShareScreen(true);
+  
+        if (sender && screenTrack) {
+          sender.replaceTrack(screenTrack);
+          console.log("Screen sharing started");
+          screenTrack.onended = async () => {
+            const camList = await getListOfCameras();
+    const micList = await getListOfMicrophones();
+    setCameras(camList);
+    setMicrophones(micList);
+    if (camList.length > 0 && !selectedCamera) {
+      setSelectedCamera(camList[0].deviceId);
+    }
+    if (micList.length > 0 && !selectedMicrophone) {
+      setSelectedMicrophone(micList[0].deviceId);
+    }
+            handleCameraChange(selectedCamera);
+            setShareScreen(false);
+          };
+        }
+      });
+    } else {
+      console.log('stopeed screen share')
+      handleCameraChange(selectedCamera);
+      setShareScreen(false);
+    }
+  }
+
+
   const joinUrl = roomId ? `${location.origin}/join/${roomId}` : '';
 
   return (
@@ -265,6 +306,7 @@ function Host({chatMessages,setChatMessages}:{chatMessages:ChatMessage[],setChat
       <br />
       <button onClick={toggleAudio}> toggle audio</button>
       <button onClick={toggleVideo}> toggle video</button>
+      <button onClick={screenShare}>Share screen</button>
       <br /><br /><br /><br /><br />
     <MessageBox channel={channel} chats={chatMessages} source={'host'} setChatMessages={setChatMessages}/>
   </div>
